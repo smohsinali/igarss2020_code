@@ -22,7 +22,7 @@ class ModisDataset(torch.utils.data.Dataset):
             self.dataset_local_path = "/tmp/africa_points.csv"
             self.dataset_local_npz = "/tmp/africa_points.npz"
         elif region == "germany":
-            self.dataset_url = "https://syncandshare.lrz.de/dl/fiAkhtQAu6RdxhZeiuJUfzSY/germany.csv"
+            self.dataset_url = "https://syncandshare.lrz.de/dl/fiSyp278PifiEghWNsnpH161/germany.csv"
             self.dataset_local_path = "/tmp/germany.csv"
             self.dataset_local_npz = "/tmp/germany.npz"
 
