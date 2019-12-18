@@ -8,7 +8,10 @@ import matplotlib.pyplot as plt
 from model import Model, snapshot
 
 def main():
-    device = torch.device("cuda")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
 
     model_dir="/tmp"
 

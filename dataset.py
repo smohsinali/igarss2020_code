@@ -72,7 +72,7 @@ class ModisDataset(torch.utils.data.Dataset):
 
 
     def load_npz(self):
-        with np.load(self.dataset_local_npz, 'r') as f:
+        with np.load(self.dataset_local_npz, 'r', allow_pickle=True) as f:
             data = f[self.fold]
             meta = pd.DataFrame(f["meta"], columns=["fid","x","y","fold"])
         meta = meta.loc[meta["fold"]==self.fold].set_index("fid")
