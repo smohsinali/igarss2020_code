@@ -6,3 +6,4 @@ geopandas
 shapely
 tqdm
 matplotlib
+jupyter

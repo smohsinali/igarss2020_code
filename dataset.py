@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 
 class ModisDataset(torch.utils.data.Dataset):
     def __init__(self, region="africa", fold="train", verbose=True,
-                 split_ratio = [.6,.2,.2], seq_length=100, overwrite=False, future=1, include_time=False):
+                 split_ratio = [.6,.2,.2], seq_length=100, overwrite=False, future=1, include_time=False,znormalize=False):
         super(ModisDataset).__init__()
 
         self.future = future
@@ -48,11 +48,15 @@ class ModisDataset(torch.utils.data.Dataset):
         self.print(f"loading cached dataset found at {self.dataset_local_npz}")
         self.data, self.meta = self.load_npz()
 
+
         data = self.data[:,:,1].astype(float)
-        self.mean = np.nanmean(data)
-        self.std = np.nanstd(data)
-        data -= self.mean
-        data /= 0.5*self.std
+        if znormalize:
+            self.mean = np.nanmean(data)
+            self.std = np.nanstd(data)
+            data -= self.mean
+            data /= 0.5*self.std
+        else:
+            data *= 1e-4
 
         #ndvi = self.data[:,:,1].astype(float)  * 1e-4
 

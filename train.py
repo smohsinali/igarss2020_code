@@ -23,7 +23,7 @@ def main():
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
 
-    dataset = ModisDataset(region="germany",fold="train", include_time=include_time)
+    dataset = ModisDataset(region="germany",fold="train", include_time=include_time, znormalize=True)
     validdataset = ModisDataset(region="germany", fold="validate", include_time=include_time)
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=512,
@@ -42,7 +42,7 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    epochs = 30
+    epochs = 10
 
     for epoch in range(epochs):
 
