@@ -13,18 +13,26 @@ def main():
     else:
         device = torch.device("cpu")
 
-    model_dir="/tmp"
 
-    include_time = False
+    num_layers = 1
+    hidden_size = 64
+    region = "germany"
+    epochs = 30
 
-    # model = Model(hidden_size=128,num_layers=2,dropout=0.5)
-    model = Model(input_size=2 if include_time else 1, hidden_size=256, output_size=2 if include_time else 1, device=device)
+    model_dir="/data2/igarss2020/models/"
+    name_pattern = "LSTM_{region}_l={num_layers}_h={hidden_size}_e={epoch}.pth"
+
+    model = Model(input_size=1,
+                  hidden_size=hidden_size,
+                  num_layers=num_layers,
+                  output_size=1,
+                  device=device)
 
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
 
-    dataset = ModisDataset(region="germany",fold="train", include_time=include_time, znormalize=True)
-    validdataset = ModisDataset(region="germany", fold="validate", include_time=include_time)
+    dataset = ModisDataset(region=region,fold="train", znormalize=True)
+    validdataset = ModisDataset(region=region, fold="validate")
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=512,
                                              shuffle=True,
@@ -42,24 +50,24 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    epochs = 10
-
     for epoch in range(epochs):
 
         train_epoch(model,dataloader,optimizer, criterion, device)
 
         test_model(model, validdataset, device)
 
-        path = f"model_epoch_{epoch}.pth"
-        print(f"saving model snapshot to {os.path.join(model_dir, path)}")
-        snapshot(model, optimizer, os.path.join(model_dir, path))
+        model_name = name_pattern.format(region=region, num_layers=num_layers, hidden_size=hidden_size, epoch=epoch)
+        pth = os.path.join(model_dir, model_name)
+        print(f"saving model snapshot to {pth}")
+        snapshot(model, optimizer, pth)
 
 def train_epoch(model,dataloader,optimizer, criterion, device):
     iterator = tqdm(enumerate(dataloader), total=len(dataloader))
     for idx, batch in iterator:
         x_data, y_data = batch
         optimizer.zero_grad()
-        y_pred, log_variances = model(x_data.to(device), y = y_data)
+        # y is used for teacher forcing during training
+        y_pred, log_variances = model(x_data.to(device), y=y_data)
         loss = criterion(y_pred, y_data.to(device), log_variances)
         loss.backward()
         optimizer.step()
@@ -72,7 +80,7 @@ def test_model(model, dataset, device):
     date = dataset.date[idx].astype(np.datetime64)
 
     N_seen_points = 200
-    N_predictions = 50
+    N_predictions = 20
     future = x.shape[0] - N_seen_points
 
     from pandas.plotting import register_matplotlib_converters

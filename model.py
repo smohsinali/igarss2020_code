@@ -3,60 +3,81 @@ import numpy as np
 import torch.nn as nn
 
 class Model(torch.nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, dropout=0.5, device=torch.device("cpu")):
+    def __init__(self, input_size, hidden_size, output_size, dropout=0.5, device=torch.device("cpu"), num_layers=1):
         super(Model, self).__init__()
         self.device = device
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size
+        self.num_layers = num_layers
         self.inlinear = nn.Linear(self.input_size, self.hidden_size)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
-        self.lstm = nn.LSTMCell(self.hidden_size, self.hidden_size) #nn.LSTMCell
-        self.linear = nn.Linear(self.hidden_size, self.output_size + 1)
+        self.lstm = torch.nn.LSTM(self.hidden_size,
+                                  self.hidden_size,
+                                  num_layers=num_layers,
+                                  dropout=dropout if num_layers > 1 else 0.0, # dropout only applied with more than one layer
+                                  bidirectional=False,
+                                  batch_first=True)
+        #self.lstm = nn.LSTMCell(self.hidden_size, self.hidden_size) #nn.LSTMCell
+        self.outlinear = nn.Linear(self.hidden_size, self.output_size + 1)
         self.to(device)
 
     def forward(self, input, future=0, y=None):
-        outputs = []
-        log_variances = []
-
         # reset the state of LSTM
         # the state is kept till the end of the sequence
 
-        h_t = torch.zeros(input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
-        c_t = torch.zeros(input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
-        for i, input_t in enumerate(input.chunk(input.size(1), dim=1)):
+        h_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
+        c_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
 
-            input_t = self.relu(self.inlinear(input_t))
-            input_t = self.dropout(input_t)
+        outputs, log_variances = self.encode(input,h_t, c_t)
 
-            h_t, c_t = self.lstm(input_t.squeeze(1), (h_t, c_t))
-            h_t = self.dropout(h_t)
-            output_logvariance = self.linear(h_t)
-            #output = output + bias
-            output = output_logvariance[:,0][:,None]
-            outputs += [output]
-            log_variance = self.relu(output_logvariance[:,-1])[:,None]
-            log_variances += [log_variance]
+        if future > 0:
+            future_outputs, future_logvariances = self.decode(outputs[:,-1], h_t, c_t, future,y=y)
+            outputs = torch.cat([outputs,future_outputs],1)
+            log_variances = torch.cat([log_variances,future_logvariances],1)
+
+        return outputs, log_variances
+
+    def encode(self,input, h_t, c_t):
+
+        input = self.inlinear(input)
+        input = self.relu(input)
+        input = self.dropout(input)
+
+        output, (h_t, c_t) = self.lstm(input, (h_t, c_t))
+        output = self.dropout(output)
+        output = self.outlinear(output)
+
+        outputs = output[:, :, 0, None]
+        log_variances = self.relu(output[:, :, 1, None])
+
+        return outputs, log_variances
+
+    def decode(self, future_input, h_t, c_t, future, y=None):
+        future_outputs = list()
+        future_logvariances = list()
         for i in range(future):
             if y is not None and np.random.random() > 0.5:
-                output = y[:, [i]]  # teacher forcing
+                future_input = y[:, [i]]  # teacher forcing
 
-            output = self.relu(self.inlinear(output).squeeze(1))
-            output = self.dropout(output)
+            future_input = self.inlinear(future_input)
+            future_input = self.relu(future_input)
+            future_input = self.dropout(future_input)
 
-            h_t, c_t = self.lstm(output, (h_t, c_t))
-            h_t = self.dropout(h_t)
-            output_logvariance = self.linear(h_t)
+            future_input, (h_t, c_t) = self.lstm(future_input[:, None, :], (h_t, c_t))
+            future_input = self.dropout(future_input)
+            future_input_logvariance = self.outlinear(future_input)
 
-            output = output_logvariance[:,0][:,None]
-            outputs += [output]
-            log_variance = self.relu(output_logvariance[:,-1])[:,None]
-            log_variances += [log_variance]
+            future_input = future_input_logvariance[:, :, 0]
+            future_logvariance = self.relu(future_input_logvariance[:, :, 1])
 
-        outputs = torch.stack(outputs, 1)
-        log_variances = torch.stack(log_variances, 1)
-        return outputs, log_variances
+            future_outputs.append(future_input)
+            future_logvariances.append(future_logvariance)
+
+        future_outputs = torch.stack(future_outputs, 1)
+        future_logvariances = torch.stack(future_logvariances, 1)
+        return future_outputs, future_logvariances
 
 def snapshot(model, optimizer, path):
     torch.save(

@@ -11,11 +11,15 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 class ModisDataset(torch.utils.data.Dataset):
-    def __init__(self, region="africa", fold="train", verbose=True,
-                 split_ratio = [.6,.2,.2], seq_length=100, overwrite=False, future=1, include_time=False,znormalize=False):
+    def __init__(self, region="africa",
+                 fold="train",
+                 verbose=True,
+                 split_ratio = [.6,.2,.2],
+                 seq_length=100,
+                 overwrite=False,
+                 include_time=False,
+                 znormalize=False):
         super(ModisDataset).__init__()
-
-        self.future = future
 
         if region == "africa":
             self.dataset_url = "https://syncandshare.lrz.de/dl/fiQjtRdMiHJ9MC2a59LJ2wkc/africa_points.csv"
