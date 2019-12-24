@@ -2,6 +2,15 @@ import torch
 import numpy as np
 import torch.nn as nn
 
+def variance(y_hat, var_hat):
+    """eq 9 in Kendall & Gal"""
+    T = y_hat.shape[0]
+    sum_squares = (1/T) * (y_hat**2).sum(0)
+    squared_sum = ((1/T) * y_hat.sum(0))**2
+    epi_var = sum_squares - squared_sum
+    ale_var = (1/T) * (var_hat**2).sum(0)
+    return epi_var, ale_var
+
 class Model(torch.nn.Module):
     def __init__(self, input_size, hidden_size, output_size, dropout=0.5, device=torch.device("cpu"), num_layers=1):
         super(Model, self).__init__()
@@ -38,6 +47,26 @@ class Model(torch.nn.Module):
             log_variances = torch.cat([log_variances,future_logvariances],1)
 
         return outputs, log_variances
+
+    def predict(self, input, n_predictions, future=0):
+        outputs = list()
+        variances = list()
+
+        for n in range(n_predictions):
+            with torch.no_grad():
+                output, log_variance = self.forward(input, future)
+            outputs.append(output)
+            variances.append(log_variance.exp())
+
+        var_hat = torch.stack(variances)
+        y_hat = torch.stack(outputs)
+
+        epi_var, ale_var = variance(y_hat, var_hat)
+        mean = y_hat.mean(0)
+
+        return mean, epi_var, ale_var
+
+
 
     def encode(self,input, h_t, c_t):
 

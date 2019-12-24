@@ -6,6 +6,9 @@ from tqdm import tqdm
 import os
 import matplotlib.pyplot as plt
 from model import Model, snapshot
+from scipy.spatial.distance import mahalanobis
+import ignite.metrics
+import pandas as pd
 
 def main():
     if torch.cuda.is_available():
@@ -14,13 +17,15 @@ def main():
         device = torch.device("cpu")
 
 
-    num_layers = 1
+    num_layers = 3
     hidden_size = 64
     region = "germany"
-    epochs = 30
+    epochs = 2
 
     model_dir="/data2/igarss2020/models/"
-    name_pattern = "LSTM_{region}_l={num_layers}_h={hidden_size}_e={epoch}.pth"
+    log_dir = "/data2/igarss2020/models/"
+    name_pattern = "LSTM_{region}_l={num_layers}_h={hidden_size}_e={epoch}"
+    log_pattern = "LSTM_{region}_l={num_layers}_h={hidden_size}"
 
     model = Model(input_size=1,
                   hidden_size=hidden_size,
@@ -32,10 +37,15 @@ def main():
     model.train()
 
     dataset = ModisDataset(region=region,fold="train", znormalize=True)
-    validdataset = ModisDataset(region=region, fold="validate")
+    validdataset = ModisDataset(region=region, fold="validate", znormalize=True)
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=512,
                                              shuffle=True,
+                                             #sampler=torch.utils.data.sampler.SubsetRandomSampler(np.arange(10000))
+                                             )
+    validdataloader = torch.utils.data.DataLoader(validdataset,
+                                             batch_size=512,
+                                             shuffle=False,
                                              #sampler=torch.utils.data.sampler.SubsetRandomSampler(np.arange(10000))
                                              )
 
@@ -50,28 +60,88 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
+
+    stats=list()
     for epoch in range(epochs):
 
-        train_epoch(model,dataloader,optimizer, criterion, device)
+        trainloss = train_epoch(model,dataloader,optimizer, criterion, device)
+        testmetrics, testloss = test_epoch(model,validdataloader,device, criterion, n_predictions=1)
+
+
+
+        metric_msg = ", ".join([f"{name}={metric.compute():.2f}" for name, metric in testmetrics.items()])
+        msg = f"epoch {epoch}: train loss {trainloss:.2f}, test loss {testloss:.2f}, {metric_msg}"
+        print(msg)
 
         test_model(model, validdataset, device)
 
         model_name = name_pattern.format(region=region, num_layers=num_layers, hidden_size=hidden_size, epoch=epoch)
-        pth = os.path.join(model_dir, model_name)
+        pth = os.path.join(model_dir, model_name+".pth")
         print(f"saving model snapshot to {pth}")
         snapshot(model, optimizer, pth)
 
+        stat = dict()
+        stat["epoch"] = epoch
+        for name, metric in testmetrics.items():
+            stat[name]=metric.compute()
+
+        stat["trainloss"] = trainloss.cpu().detach().numpy()
+        stat["testloss"] = testloss.cpu().detach().numpy()
+        stats.append(stat)
+
+    df = pd.DataFrame(stats)
+
 def train_epoch(model,dataloader,optimizer, criterion, device):
     iterator = tqdm(enumerate(dataloader), total=len(dataloader))
+    losses = list()
     for idx, batch in iterator:
-        x_data, y_data = batch
+        x_data, y_true = batch
+
+        x_data = x_data.to(device)
+        y_true = y_true.to(device)
+
         optimizer.zero_grad()
         # y is used for teacher forcing during training
-        y_pred, log_variances = model(x_data.to(device), y=y_data)
-        loss = criterion(y_pred, y_data.to(device), log_variances)
+        y_pred, log_variances = model(x_data, y=y_true)
+        loss = criterion(y_pred, y_true, log_variances)
+        losses.append(loss)
         loss.backward()
         optimizer.step()
         iterator.set_description(f"loss {loss:.4f}, mean log_variances {log_variances.mean():.6f}")
+
+    return torch.stack(losses).mean()
+
+def test_epoch(model,dataloader, device, criterion, n_predictions):
+
+    metrics = dict(
+        mae=ignite.metrics.MeanAbsoluteError(),
+        mse=ignite.metrics.MeanSquaredError(),
+        rmse=ignite.metrics.RootMeanSquaredError()
+    )
+
+    losses = list()
+
+    with torch.no_grad():
+        iterator = tqdm(enumerate(dataloader), total=len(dataloader))
+        for idx, batch in iterator:
+            x_data, y_true = batch
+
+            x_data = x_data.to(device)
+            y_true = y_true.to(device)
+
+            # make single forward pass to get test loss
+            y_pred,log_variances = model(x_data)
+            loss = criterion(y_pred, y_true, log_variances)
+            losses.append(loss.cpu())
+
+            # make multiple MC dropout inferences for further metrics
+            y_pred, epi_var, ale_var = model.predict(x_data.to(device), n_predictions)
+            #mae.update((y_pred, y_true))
+            #metrics(y_true, y_pred, epi_var+ale_var)
+            for name, metric in metrics.items():
+                metric.update((y_pred.view(-1), y_true.view(-1)))
+
+    return metrics, torch.stack(losses).mean()
 
 def test_model(model, dataset, device):
     idx = 1
