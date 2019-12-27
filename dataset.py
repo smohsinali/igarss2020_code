@@ -58,7 +58,7 @@ class ModisDataset(torch.utils.data.Dataset):
             self.mean = np.nanmean(data)
             self.std = np.nanstd(data)
             data -= self.mean
-            data /= 0.5*self.std
+            data /= self.std
         else:
             data *= 1e-4
 
@@ -77,7 +77,6 @@ class ModisDataset(torch.utils.data.Dataset):
             self.data = ndvi[:,:,None]
 
         self.x_data, self.y_data = transform_data(self.data, seq_len=self.seq_length)
-
 
     def load_npz(self):
         with np.load(self.dataset_local_npz, 'r', allow_pickle=True) as f:
@@ -166,6 +165,148 @@ class ModisDataset(torch.utils.data.Dataset):
         x = self.x_data[idx]
         y = self.y_data[idx]
         return x, y
+
+
+class Sentinel5Dataset(torch.utils.data.Dataset):
+    def __init__(self,
+                 fold="train",
+                 verbose=True,
+                 split_ratio = [.6,.2,.2],
+                 seq_length=100,
+                 overwrite=False):
+        super(Sentinel5Dataset).__init__()
+
+        self.dataset_url = "https://syncandshare.lrz.de/dl/fiMBavGt2aPijY8pjiKESWFF/urbanareas_no2_all.csv"
+        self.dataset_local_path = "/tmp/urbanareas_no2_all.csv"
+        self.dataset_local_npz = "/tmp/urbanareas_no2_all.npz"
+
+        assert sum(split_ratio) == 1
+
+        np.random.seed(seed=0)
+        self.fold = fold
+        self.seq_length = seq_length
+        self.split_ratio = split_ratio
+
+        self.verbose = verbose
+
+        if not os.path.exists(self.dataset_local_path) or overwrite:
+            self.print(f"No Dataset found at {self.dataset_local_path}. Downloading from {self.dataset_url}")
+            download_url(self.dataset_url, self.dataset_local_path)
+        else:
+            self.print(f"local dataset found at {self.dataset_local_path}")
+
+        if not os.path.exists(self.dataset_local_npz) or overwrite:
+            self.print(f"no cached dataset found at {self.dataset_local_npz}. partitioning data in train/valid/test {split_ratio[0]}/{split_ratio[1]}/{split_ratio[2]} caching csv to npz files for faster loading")
+            self.save_npz()
+
+        self.print(f"loading cached dataset found at {self.dataset_local_npz}")
+        self.data, self.meta, self.mean, self.std = self.load_npz()
+
+
+        x_data = list()
+        y_data = list()
+        for _,row in self.meta.iterrows():
+            d = self.data[row["city"]][:, 1]
+            x, y = transform_data(d.astype(float)[:, None, None], seq_len=self.seq_length)
+            x_data.append(x)
+            y_data.append(y)
+
+        self.x_data = torch.cat(x_data,dim=0)
+        self.y_data = torch.cat(y_data,dim=0)
+
+        self.x_data = self.znormalize(self.x_data)
+        self.y_data = self.znormalize(self.y_data)
+
+    def znormalize(self,arr):
+        arr = arr - torch.Tensor(self.mean)
+        arr = arr / torch.Tensor(self.std)
+        return arr
+
+
+    def load_npz(self):
+        with np.load(self.dataset_local_npz, 'r', allow_pickle=True) as f:
+            meta = pd.DataFrame(f[self.fold], columns=["fid","x","y","city"])
+            data = {k:v for k, v in f.items() if k in meta["city"].values}
+            mean = f["mean"]
+            std = f["std"]
+
+        return data, meta, mean, std
+
+    def save_npz(self):
+        df = self._csv2dataframe()
+
+        data_dict, meta = self._dataframe2npz(df)
+
+        mean = df.value.mean()
+        std = df.value.std()
+
+        meta = pd.DataFrame.from_records(meta)
+
+        # shuffle meta dataframe
+        meta = meta.sample(frac=1)
+
+        N = len(meta)
+        train, validate, test = np.split(meta, [int(self.split_ratio[0] * N),
+                                                     int((self.split_ratio[0] + self.split_ratio[1]) * N)])
+
+        store_dict = data_dict
+        store_dict["train"] = train
+        store_dict["validate"] = validate
+        store_dict["test"] = test
+        store_dict["mean"] = mean
+        store_dict["std"] = std
+
+        np.savez(self.dataset_local_npz, **store_dict)
+
+    def _csv2dataframe(self):
+
+        self.print(f"loading csv from {self.dataset_local_path}")
+        df = gpd.read_file(self.dataset_local_path)
+
+        self.print("convert string values to numeric")
+        df["value"] = pd.to_numeric(df["value"], errors='coerce')
+
+        self.print("write geometry object from string geojson")
+        df["geometry"] = df[".geo"].apply(lambda x: shapely.geometry.shape(json.loads(x)))
+
+        self.print("add feature id for each unique point")
+        df["fid"], _ = pd.factorize(df[".geo"])
+        df = df.set_index("fid")
+
+        df["date"] = pd.to_datetime(df["date"])
+
+        return df
+
+    def _dataframe2npz(self,df):
+        fids = df.index.unique()
+        data = dict()
+        meta = list()
+        for fid in tqdm(fids, total=len(fids)):
+            pt = df.loc[fid]
+            date = pt["date"].dt.strftime("%Y-%m-%d").values
+            value = pt["value"].values
+            city = pt["City"].iloc[0]
+            meta.append(dict(
+                fid=fid,
+                x=pt.iloc[0].geometry.x,
+                y=pt.iloc[0].geometry.y,
+                city=city
+            ))
+            data[city]=np.vstack([date, value]).T
+        return data, np.stack(meta)
+
+    def print(self,msg):
+        if self.verbose:
+            print(msg)
+
+    def __len__(self):
+        return self.x_data.shape[0]
+
+    def __getitem__(self,idx ):
+        x = self.x_data[idx]
+        y = self.y_data[idx]
+        return x, y
+
 
 def transform_data(arr, seq_len):
     d = arr.shape[2]

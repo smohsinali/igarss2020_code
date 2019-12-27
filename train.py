@@ -1,4 +1,4 @@
-from dataset import ModisDataset
+from dataset import ModisDataset, Sentinel5Dataset
 import torch
 import numpy as np
 import torch.nn as nn
@@ -20,7 +20,7 @@ def main():
     num_layers = 3
     hidden_size = 64
     region = "germany"
-    epochs = 2
+    epochs = 100
 
     model_dir="/data2/igarss2020/models/"
     log_dir = "/data2/igarss2020/models/"
@@ -38,6 +38,10 @@ def main():
 
     dataset = ModisDataset(region=region,fold="train", znormalize=True)
     validdataset = ModisDataset(region=region, fold="validate", znormalize=True)
+
+    #dataset = Sentinel5Dataset(fold="train", seq_length=300)
+    #validdataset = Sentinel5Dataset(fold="validate", seq_length=300)
+
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=512,
                                              shuffle=True,
@@ -144,13 +148,32 @@ def test_epoch(model,dataloader, device, criterion, n_predictions):
     return metrics, torch.stack(losses).mean()
 
 def test_model(model, dataset, device):
-    idx = 1
 
-    x = dataset.data[idx].astype(float)
-    date = dataset.date[idx].astype(np.datetime64)
+    if isinstance(dataset,ModisDataset):
 
-    N_seen_points = 200
-    N_predictions = 20
+        idx = 1
+
+        x = dataset.data[idx].astype(float)
+        date = dataset.date[idx].astype(np.datetime64)
+        N_seen_points = 200
+        N_predictions = 20
+
+
+    elif isinstance(dataset,Sentinel5Dataset):
+        d = dataset.data["Napoli"]
+        x = d[:,1].astype(float)[:,None]
+
+        x = x - dataset.mean
+        x = x / dataset.std
+
+        date = d[:,0].astype(np.datetime64)
+
+        N_seen_points = 150
+        N_predictions = 20
+
+    else:
+        return
+
     future = x.shape[0] - N_seen_points
 
     from pandas.plotting import register_matplotlib_converters
