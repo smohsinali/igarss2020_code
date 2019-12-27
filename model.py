@@ -36,6 +36,9 @@ class Model(torch.nn.Module):
         # reset the state of LSTM
         # the state is kept till the end of the sequence
 
+        #input = input - input.mean(1)[:, :, None]
+        #input = input / input.std(1)[:, :, None]
+
         h_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
         c_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
 
@@ -79,7 +82,7 @@ class Model(torch.nn.Module):
         output = self.outlinear(output)
 
         outputs = output[:, :, 0, None]
-        log_variances = self.relu(output[:, :, 1, None])
+        log_variances = output[:, :, 1, None]
 
         return outputs, log_variances
 
@@ -99,7 +102,7 @@ class Model(torch.nn.Module):
             future_input_logvariance = self.outlinear(future_input)
 
             future_input = future_input_logvariance[:, :, 0]
-            future_logvariance = self.relu(future_input_logvariance[:, :, 1])
+            future_logvariance = future_input_logvariance[:, :, 1]
 
             future_outputs.append(future_input)
             future_logvariances.append(future_logvariance)

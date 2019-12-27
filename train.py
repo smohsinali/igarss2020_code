@@ -17,8 +17,8 @@ def main():
         device = torch.device("cpu")
 
 
-    num_layers = 3
-    hidden_size = 64
+    num_layers = 1
+    hidden_size = 128
     region = "germany"
     epochs = 100
 
@@ -36,8 +36,8 @@ def main():
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
 
-    dataset = ModisDataset(region=region,fold="train", znormalize=True)
-    validdataset = ModisDataset(region=region, fold="validate", znormalize=True)
+    dataset = ModisDataset(region=region,fold="train", znormalize=False, augment=False)
+    validdataset = ModisDataset(region=region, fold="validate", znormalize=False, augment=False)
 
     #dataset = Sentinel5Dataset(fold="train", seq_length=300)
     #validdataset = Sentinel5Dataset(fold="validate", seq_length=300)
@@ -62,7 +62,7 @@ def main():
         regularization = log_variances.mean()
         return 0.5 * (loss + regularization)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-6)
 
 
     stats=list()
@@ -70,9 +70,6 @@ def main():
 
         trainloss = train_epoch(model,dataloader,optimizer, criterion, device)
         testmetrics, testloss = test_epoch(model,validdataloader,device, criterion, n_predictions=1)
-
-
-
         metric_msg = ", ".join([f"{name}={metric.compute():.2f}" for name, metric in testmetrics.items()])
         msg = f"epoch {epoch}: train loss {trainloss:.2f}, test loss {testloss:.2f}, {metric_msg}"
         print(msg)
@@ -148,6 +145,7 @@ def test_epoch(model,dataloader, device, criterion, n_predictions):
     return metrics, torch.stack(losses).mean()
 
 def test_model(model, dataset, device):
+    from visualizations import make_and_plot_predictions
 
     if isinstance(dataset,ModisDataset):
 
@@ -155,9 +153,19 @@ def test_model(model, dataset, device):
 
         x = dataset.data[idx].astype(float)
         date = dataset.date[idx].astype(np.datetime64)
-        N_seen_points = 200
-        N_predictions = 20
+        N_seen_points = 250
+        N_predictions = 10
 
+        make_and_plot_predictions(model, x, date, N_seen_points=N_seen_points, N_predictions=N_predictions, device=device)
+        plt.show()
+
+        idx = 20
+
+        x = dataset.data[idx].astype(float)
+        date = dataset.date[idx].astype(np.datetime64)
+        make_and_plot_predictions(model, x, date, N_seen_points=N_seen_points, N_predictions=N_predictions,
+                                  device=device)
+        plt.show()
 
     elif isinstance(dataset,Sentinel5Dataset):
         d = dataset.data["Napoli"]
@@ -168,16 +176,24 @@ def test_model(model, dataset, device):
 
         date = d[:,0].astype(np.datetime64)
 
-        N_seen_points = 150
+        N_seen_points = 300
         N_predictions = 20
+
+        make_and_plot_predictions(model, x, date, N_seen_points=N_seen_points, N_predictions=N_predictions,
+                                  device=device)
+        plt.show()
 
     else:
         return
 
-    future = x.shape[0] - N_seen_points
 
+    """
     from pandas.plotting import register_matplotlib_converters
     register_matplotlib_converters()
+
+    
+    future = x.shape[0] - N_seen_points
+
 
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(date[:N_seen_points], x[:N_seen_points,0], c="#000000", alpha=1, label="seen input sequence")
@@ -194,7 +210,7 @@ def test_model(model, dataset, device):
     ax.axvline(x=date[N_seen_points], ymin=0, ymax=1)
     ax.legend()
     plt.show()
-
+    """
 
 if __name__ == '__main__':
     main()

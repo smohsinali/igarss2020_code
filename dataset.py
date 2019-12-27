@@ -8,7 +8,8 @@ import json
 import pandas as pd
 import geopandas as gpd
 import numpy as np
-from sklearn.model_selection import train_test_split
+
+AUGMENTATION_OFFSET_MAGNITUDE = 1
 
 class ModisDataset(torch.utils.data.Dataset):
     def __init__(self, region="africa",
@@ -18,7 +19,8 @@ class ModisDataset(torch.utils.data.Dataset):
                  seq_length=100,
                  overwrite=False,
                  include_time=False,
-                 znormalize=False):
+                 znormalize=False,
+                 augment=False):
         super(ModisDataset).__init__()
 
         if region == "africa":
@@ -36,6 +38,7 @@ class ModisDataset(torch.utils.data.Dataset):
         self.fold = fold
         self.seq_length = seq_length
         self.split_ratio = split_ratio
+        self.augment = augment
 
         self.verbose = verbose
 
@@ -161,9 +164,19 @@ class ModisDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.x_data.shape[0]
 
+    def add_offset(self, x, y):
+        offset = (torch.rand(1)-0.5)*AUGMENTATION_OFFSET_MAGNITUDE
+        x = x + offset
+        y = y + offset
+        return x,y
+
     def __getitem__(self,idx ):
         x = self.x_data[idx]
         y = self.y_data[idx]
+
+        if self.augment:
+            x,y = self.add_offset(x,y)
+
         return x, y
 
 
@@ -221,7 +234,6 @@ class Sentinel5Dataset(torch.utils.data.Dataset):
         arr = arr - torch.Tensor(self.mean)
         arr = arr / torch.Tensor(self.std)
         return arr
-
 
     def load_npz(self):
         with np.load(self.dataset_local_npz, 'r', allow_pickle=True) as f:
