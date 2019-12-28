@@ -6,7 +6,6 @@ from tqdm import tqdm
 import os
 import matplotlib.pyplot as plt
 from model import Model, snapshot
-from scipy.spatial.distance import mahalanobis
 import ignite.metrics
 import pandas as pd
 
@@ -16,9 +15,9 @@ def main():
     else:
         device = torch.device("cpu")
 
-    num_layers = 3
-    hidden_size = 32
-    region = "canada"
+    num_layers = 8
+    hidden_size = 128
+    region = "volcanopuyehue"
     epochs = 100
     include_time = True
 
@@ -36,8 +35,19 @@ def main():
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
 
-    dataset = ModisDataset(region=region,fold="train", znormalize=True, augment=False, overwrite=False, include_time=include_time)
-    validdataset = ModisDataset(region=region, fold="validate", znormalize=True, augment=False, include_time=include_time)
+    dataset = ModisDataset(region=region,
+                           fold="train",
+                           znormalize=True,
+                           augment=False,
+                           overwrite=False,
+                           include_time=include_time,
+                           train_uptodate='2010-01-01')
+
+    validdataset = ModisDataset(region=region,
+                                fold="validate",
+                                znormalize=True,
+                                augment=False,
+                                include_time=include_time)
 
     #dataset = Sentinel5Dataset(fold="train", seq_length=300)
     #validdataset = Sentinel5Dataset(fold="validate", seq_length=300)

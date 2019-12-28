@@ -19,6 +19,7 @@ class ModisDataset(torch.utils.data.Dataset):
                  seq_length=100,
                  overwrite=False,
                  include_time=False,
+                 train_uptodate=None,
                  znormalize=False,
                  augment=False):
         super(ModisDataset).__init__()
@@ -43,8 +44,16 @@ class ModisDataset(torch.utils.data.Dataset):
             self.dataset_local_path = "/tmp/dubai.csv"
             self.dataset_local_npz = "/tmp/dubai.npz"
             self.valuefield = "EVI"
+        elif region == "volcanopuyehue":
+            self.dataset_url = "https://syncandshare.lrz.de/dl/fiLMJuWw4fhWk8AoeHB6dZVP/VolcanoPuyehue.csv"
+            self.dataset_local_path = "/tmp/VolcanoPuyehue.csv"
+            self.dataset_local_npz = "/tmp/VolcanoPuyehue.npz"
+            self.valuefield = "EVI"
 
         assert sum(split_ratio) == 1
+
+        # e.g. '01-01-2010'
+        self.train_uptodate = train_uptodate
 
         np.random.seed(seed=0)
         self.fold = fold
@@ -66,6 +75,13 @@ class ModisDataset(torch.utils.data.Dataset):
 
         self.print(f"loading cached dataset found at {self.dataset_local_npz}")
         self.data, self.meta = self.load_npz()
+
+        if self.train_uptodate is not None:
+            self.print(f"train_uptodate={self.train_uptodate} provided. removing all observations before {self.train_uptodate}")
+            mask = self.data[:, :, 0].astype(np.datetime64) < np.array([self.train_uptodate], dtype=np.datetime64)
+            mask = np.repeat(mask[:,:,None],2,axis=2)
+            N, T, D = self.data.shape
+            self.data = self.data[mask].reshape(N,-1,D)
 
 
         data = self.data[:,:,1].astype(float)
