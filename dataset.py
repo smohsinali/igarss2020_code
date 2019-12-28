@@ -27,10 +27,22 @@ class ModisDataset(torch.utils.data.Dataset):
             self.dataset_url = "https://syncandshare.lrz.de/dl/fiQjtRdMiHJ9MC2a59LJ2wkc/africa_points.csv"
             self.dataset_local_path = "/tmp/africa_points.csv"
             self.dataset_local_npz = "/tmp/africa_points.npz"
+            self.valuefield = "NDVI"
         elif region == "germany":
             self.dataset_url = "https://syncandshare.lrz.de/dl/fiSyp278PifiEghWNsnpH161/germany.csv"
             self.dataset_local_path = "/tmp/germany.csv"
             self.dataset_local_npz = "/tmp/germany.npz"
+            self.valuefield = "NDVI"
+        elif region == "canada":
+            self.dataset_url = "https://syncandshare.lrz.de/dl/fiWPoesYqXuE1vUvMHR4EPzx/canada.csv"
+            self.dataset_local_path = "/tmp/canada.csv"
+            self.dataset_local_npz = "/tmp/canada.npz"
+            self.valuefield = "EVI"
+        elif region == "dubai":
+            self.dataset_url = "https://syncandshare.lrz.de/dl/fiRtfxTyR5LWeG18HaNzg9Fz/dubai.csv"
+            self.dataset_local_path = "/tmp/dubai.csv"
+            self.dataset_local_npz = "/tmp/dubai.npz"
+            self.valuefield = "EVI"
 
         assert sum(split_ratio) == 1
 
@@ -122,7 +134,7 @@ class ModisDataset(torch.utils.data.Dataset):
         df = gpd.read_file(self.dataset_local_path)
 
         self.print("convert string values to numeric")
-        df["NDVI"] = pd.to_numeric(df["NDVI"], errors='coerce')
+        df[self.valuefield] = pd.to_numeric(df[self.valuefield], errors='coerce')
 
         self.print("write geometry object from string geojson")
         df["geometry"] = df[".geo"].apply(lambda x: shapely.geometry.shape(json.loads(x)))
@@ -147,13 +159,13 @@ class ModisDataset(torch.utils.data.Dataset):
         for fid in tqdm(fids, total=len(fids)):
             pt = df.loc[fid]
             date = pt["date"].dt.strftime("%Y-%m-%d").values
-            ndvi = pt["NDVI"].values
+            value = pt[self.valuefield].values
             meta.append(dict(
                 fid=fid,
                 x=pt.iloc[0].geometry.x,
                 y=pt.iloc[0].geometry.y
             ))
-            pt = np.vstack([date, ndvi]).T
+            pt = np.vstack([date, value]).T
             data.append(pt)
         return np.stack(data), np.stack(meta)
 

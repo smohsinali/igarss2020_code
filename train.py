@@ -16,10 +16,9 @@ def main():
     else:
         device = torch.device("cpu")
 
-
-    num_layers = 1
-    hidden_size = 128
-    region = "germany"
+    num_layers = 3
+    hidden_size = 32
+    region = "canada"
     epochs = 100
 
     model_dir="/data2/igarss2020/models/"
@@ -36,8 +35,8 @@ def main():
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
 
-    dataset = ModisDataset(region=region,fold="train", znormalize=False, augment=False)
-    validdataset = ModisDataset(region=region, fold="validate", znormalize=False, augment=False)
+    dataset = ModisDataset(region=region,fold="train", znormalize=True, augment=False, overwrite=False)
+    validdataset = ModisDataset(region=region, fold="validate", znormalize=True, augment=False)
 
     #dataset = Sentinel5Dataset(fold="train", seq_length=300)
     #validdataset = Sentinel5Dataset(fold="validate", seq_length=300)
@@ -63,7 +62,6 @@ def main():
         return 0.5 * (loss + regularization)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-6)
-
 
     stats=list()
     for epoch in range(epochs):
