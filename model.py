@@ -32,12 +32,16 @@ class Model(torch.nn.Module):
         self.outlinear = nn.Linear(self.hidden_size, self.output_size + 1)
         self.to(device)
 
-    def forward(self, input, future=0, y=None):
+    def forward(self, input, future=0, y=None, date=None, date_future=None):
         # reset the state of LSTM
         # the state is kept till the end of the sequence
 
         #input = input - input.mean(1)[:, :, None]
         #input = input / input.std(1)[:, :, None]
+
+        if date is not None:
+            input = input[:,:,0]
+            input = torch.stack([input,date],2)
 
         h_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
         c_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
@@ -45,19 +49,19 @@ class Model(torch.nn.Module):
         outputs, log_variances = self.encode(input,h_t, c_t)
 
         if future > 0:
-            future_outputs, future_logvariances = self.decode(outputs[:,-1], h_t, c_t, future,y=y)
+            future_outputs, future_logvariances = self.decode(outputs[:,-1], h_t, c_t, future,y=y, date=date_future)
             outputs = torch.cat([outputs,future_outputs],1)
             log_variances = torch.cat([log_variances,future_logvariances],1)
 
         return outputs, log_variances
 
-    def predict(self, input, n_predictions, future=0):
+    def predict(self, input, n_predictions, future=0, date=None, date_future=None):
         outputs = list()
         variances = list()
 
         for n in range(n_predictions):
             with torch.no_grad():
-                output, log_variance = self.forward(input, future)
+                output, log_variance = self.forward(input, future, date=date, date_future=date_future)
             outputs.append(output)
             variances.append(log_variance.exp())
 
@@ -82,16 +86,22 @@ class Model(torch.nn.Module):
         output = self.outlinear(output)
 
         outputs = output[:, :, 0, None]
-        log_variances = output[:, :, 1, None]
+        log_variances = output[:, :, -1, None]
 
         return outputs, log_variances
 
-    def decode(self, future_input, h_t, c_t, future, y=None):
+    def decode(self, future_input, h_t, c_t, future, y=None, date=None):
         future_outputs = list()
         future_logvariances = list()
         for i in range(future):
             if y is not None and np.random.random() > 0.5:
                 future_input = y[:, [i]]  # teacher forcing
+            if date is not None:
+                # take next time instance [1,1]
+                next_date = date[:,i].unsqueeze(0)
+
+                # concatenate with future input and ensure [N, D] dimensions
+                future_input = torch.stack([future_input, next_date],2).squeeze(1)
 
             future_input = self.inlinear(future_input)
             future_input = self.relu(future_input)

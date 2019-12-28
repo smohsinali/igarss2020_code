@@ -20,13 +20,14 @@ def main():
     hidden_size = 32
     region = "canada"
     epochs = 100
+    include_time = True
 
     model_dir="/data2/igarss2020/models/"
     log_dir = "/data2/igarss2020/models/"
     name_pattern = "LSTM_{region}_l={num_layers}_h={hidden_size}_e={epoch}"
     log_pattern = "LSTM_{region}_l={num_layers}_h={hidden_size}"
 
-    model = Model(input_size=1,
+    model = Model(input_size=1 if not include_time else 2,
                   hidden_size=hidden_size,
                   num_layers=num_layers,
                   output_size=1,
@@ -35,8 +36,8 @@ def main():
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
 
-    dataset = ModisDataset(region=region,fold="train", znormalize=True, augment=False, overwrite=False)
-    validdataset = ModisDataset(region=region, fold="validate", znormalize=True, augment=False)
+    dataset = ModisDataset(region=region,fold="train", znormalize=True, augment=False, overwrite=False, include_time=include_time)
+    validdataset = ModisDataset(region=region, fold="validate", znormalize=True, augment=False, include_time=include_time)
 
     #dataset = Sentinel5Dataset(fold="train", seq_length=300)
     #validdataset = Sentinel5Dataset(fold="validate", seq_length=300)
@@ -90,7 +91,7 @@ def main():
 
     df = pd.DataFrame(stats)
 
-def train_epoch(model,dataloader,optimizer, criterion, device):
+def train_epoch(model, dataloader, optimizer, criterion, device):
     iterator = tqdm(enumerate(dataloader), total=len(dataloader))
     losses = list()
     for idx, batch in iterator:
@@ -99,9 +100,15 @@ def train_epoch(model,dataloader,optimizer, criterion, device):
         x_data = x_data.to(device)
         y_true = y_true.to(device)
 
+        if y_true.shape[2] == 2:
+            doy = x_data[:,:,1]
+            y_true = y_true[:, :, 0].unsqueeze(2)
+        else:
+            doy = None
+
         optimizer.zero_grad()
         # y is used for teacher forcing during training
-        y_pred, log_variances = model(x_data, y=y_true)
+        y_pred, log_variances = model(x_data, y=y_true, date=doy)
         loss = criterion(y_pred, y_true, log_variances)
         losses.append(loss)
         loss.backward()
@@ -128,15 +135,19 @@ def test_epoch(model,dataloader, device, criterion, n_predictions):
             x_data = x_data.to(device)
             y_true = y_true.to(device)
 
+            if y_true.shape[2] == 2:
+                doy = x_data[:, :, 1]
+                y_true = y_true[:, :, 0].unsqueeze(2)
+            else:
+                doy = None
+
             # make single forward pass to get test loss
-            y_pred,log_variances = model(x_data)
+            y_pred,log_variances = model(x_data, date=doy)
             loss = criterion(y_pred, y_true, log_variances)
             losses.append(loss.cpu())
 
             # make multiple MC dropout inferences for further metrics
-            y_pred, epi_var, ale_var = model.predict(x_data.to(device), n_predictions)
-            #mae.update((y_pred, y_true))
-            #metrics(y_true, y_pred, epi_var+ale_var)
+            y_pred, epi_var, ale_var = model.predict(x_data, n_predictions, date=doy)
             for name, metric in metrics.items():
                 metric.update((y_pred.view(-1), y_true.view(-1)))
 

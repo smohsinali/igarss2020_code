@@ -87,6 +87,10 @@ class ModisDataset(torch.utils.data.Dataset):
             #year = dates.astype('datetime64[Y]').astype(int) + 1970
             doy = dates.astype(np.datetime64) - dates.astype('datetime64[Y]')
             doy = doy.astype(float) / 365
+
+            # sinusoidal encoding
+            doy = np.sin(doy * 2 * np.pi)
+
             self.data = np.dstack([ndvi, doy])
         else:
             self.data = ndvi[:,:,None]

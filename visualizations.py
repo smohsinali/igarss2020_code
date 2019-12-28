@@ -30,8 +30,17 @@ def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=5
     axs[1].set_title("aleatoric uncertainty")
     axs[2].set_title("combined uncertainty")
 
-    x_data = torch.Tensor(x)[None, :N_seen_points].to(device)
-    mean, epi_var, ale_var = model.predict(x_data, N_predictions, future)
+
+    x_ = torch.Tensor(x)[None, :].to(device)
+    if x_.shape[2] == 2:
+        doy_seen = x_[:, :N_seen_points, 1]
+        doy_future = x_[:, N_seen_points:, 1]
+    else:
+        doy_seen = None
+        doy_future=None
+    x_data = x_[:, :N_seen_points, 0].unsqueeze(2)
+
+    mean, epi_var, ale_var = model.predict(x_data, N_predictions, future, date=doy_seen, date_future=doy_future)
     var = epi_var + ale_var
 
     mean = mean.cpu().squeeze()
