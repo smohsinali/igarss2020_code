@@ -11,7 +11,7 @@ tumbluelight = "#64a0c8"
 tumgray = "#999999"
 tumlightgray = "#dad7cb"
 
-def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=50, ylim=None, device=torch.device('cpu')):
+def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=50, ylim=None, device=torch.device('cpu'), store=None, meanstd=None):
     def variance(y_hat, var_hat):
         """eq 9 in Kendall & Gal"""
         T = y_hat.shape[0]
@@ -48,12 +48,24 @@ def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=5
     epi_var = epi_var.cpu().squeeze()
     ale_var = ale_var.cpu().squeeze()
 
+    epi_std = torch.sqrt(epi_var[1:])
+    ale_std = torch.sqrt(ale_var[1:])
+    data_std = epi_std + ale_std
+
+    if meanstd is not None:
+        dmean, dstd = meanstd
+        x = (x * dstd) + dmean
+        mean = (mean * dstd) + dmean
+        ale_std = ale_std * dstd
+        epi_std = epi_std * dstd
+        data_std = data_std * dstd
+
     n_sigma = 1
-    axs[0].fill_between(date[1:], mean[1:] + n_sigma * np.sqrt(epi_var[1:]), mean[1:] - n_sigma * np.sqrt(epi_var[1:]),
+    axs[0].fill_between(date[1:], mean[1:] + epi_std, mean[1:] - epi_std,
                         alpha=.5, label=f"epistemic {n_sigma}" + r"$\sigma$")
-    axs[1].fill_between(date[1:], mean[1:] + n_sigma * np.sqrt(ale_var[1:]), mean[1:] - n_sigma * np.sqrt(ale_var[1:]),
+    axs[1].fill_between(date[1:], mean[1:] + ale_std, mean[1:] - ale_std,
                         alpha=.5, label=f"aleatoric {n_sigma}" + r"$\sigma$")
-    axs[2].fill_between(date[1:], mean[1:] + n_sigma * np.sqrt(var)[1:], mean[1:] - n_sigma * np.sqrt(var)[1:], alpha=.5,
+    axs[2].fill_between(date[1:], mean[1:] + data_std, mean[1:] - data_std, alpha=.5,
                         label=r"combined $\sigma$")
 
     for ax in axs:
@@ -69,5 +81,20 @@ def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=5
     #    ax.plot(date[:N_seen_points + future], y_pred, c=tumorange, label=label, alpha=(1 / N_predictions) ** 0.7)
 
     [ax.legend(ncol=3) for ax in axs]
+
+    if store is not None:
+        import pandas as pd
+        df = pd.DataFrame([date, mean.numpy(), epi_std.numpy(), ale_std.numpy(), data_std.numpy(), x[:, 0]],
+                     index=["date", "mean", "epi_std", "ale_std", "std", "x"]).T
+        df["mean-epistd"] = df["mean"] - df["epi_std"]
+        df["mean+epistd"] = df["mean"] + df["epi_std"]
+        df["mean-alestd"] = df["mean"] - df["ale_std"]
+        df["mean+alestd"] = df["mean"] + df["ale_std"]
+        df["mean-std"] = df["mean"] - df["std"]
+        df["mean+std"] = df["mean"] + df["std"]
+        df.iloc[:N_seen_points].to_csv(f"{store}_seen.csv")
+        df.iloc[N_seen_points:].to_csv(f"{store}_predicted.csv")
+        df.to_csv(f"{store}.csv")
+        print(f"saving to {store}")
 
     return fig, axs

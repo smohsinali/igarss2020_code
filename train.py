@@ -15,11 +15,12 @@ def main():
     else:
         device = torch.device("cpu")
 
-    num_layers = 8
-    hidden_size = 128
-    region = "volcanopuyehue"
+    num_layers = 3
+    hidden_size = 32
+    region = "germany"
     epochs = 100
-    include_time = True
+    include_time = False
+    smooth = None
 
     model_dir="/data2/igarss2020/models/"
     log_dir = "/data2/igarss2020/models/"
@@ -35,19 +36,23 @@ def main():
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
 
+
+
     dataset = ModisDataset(region=region,
                            fold="train",
                            znormalize=True,
                            augment=False,
                            overwrite=False,
                            include_time=include_time,
-                           train_uptodate='2010-01-01')
+                           filter_date=(None,None),
+                           smooth=smooth)
 
     validdataset = ModisDataset(region=region,
                                 fold="validate",
                                 znormalize=True,
                                 augment=False,
-                                include_time=include_time)
+                                include_time=include_time,
+                                smooth=smooth)
 
     #dataset = Sentinel5Dataset(fold="train", seq_length=300)
     #validdataset = Sentinel5Dataset(fold="validate", seq_length=300)
@@ -175,7 +180,7 @@ def test_model(model, dataset, device):
         N_seen_points = 250
         N_predictions = 10
 
-        make_and_plot_predictions(model, x, date, N_seen_points=N_seen_points, N_predictions=N_predictions, device=device)
+        make_and_plot_predictions(model, x, date, N_seen_points=N_seen_points, N_predictions=N_predictions, device=device,meanstd=(dataset.mean,dataset.std))
         plt.show()
 
         idx = 20
@@ -183,7 +188,7 @@ def test_model(model, dataset, device):
         x = dataset.data[idx].astype(float)
         date = dataset.date[idx].astype(np.datetime64)
         make_and_plot_predictions(model, x, date, N_seen_points=N_seen_points, N_predictions=N_predictions,
-                                  device=device)
+                                  device=device,meanstd=(dataset.mean,dataset.std))
         plt.show()
 
     elif isinstance(dataset,Sentinel5Dataset):

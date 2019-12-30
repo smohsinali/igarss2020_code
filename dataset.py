@@ -8,6 +8,7 @@ import json
 import pandas as pd
 import geopandas as gpd
 import numpy as np
+import scipy.ndimage
 
 AUGMENTATION_OFFSET_MAGNITUDE = 1
 
@@ -19,9 +20,10 @@ class ModisDataset(torch.utils.data.Dataset):
                  seq_length=100,
                  overwrite=False,
                  include_time=False,
-                 train_uptodate=None,
+                 filter_date=(None,None),
                  znormalize=False,
-                 augment=False):
+                 augment=False,
+                 smooth=None):
         super(ModisDataset).__init__()
 
         if region == "africa":
@@ -52,8 +54,8 @@ class ModisDataset(torch.utils.data.Dataset):
 
         assert sum(split_ratio) == 1
 
-        # e.g. '01-01-2010'
-        self.train_uptodate = train_uptodate
+        # e.g. ('01-01-2010','01-01-2019')
+        self.filter_date = filter_date
 
         np.random.seed(seed=0)
         self.fold = fold
@@ -76,9 +78,16 @@ class ModisDataset(torch.utils.data.Dataset):
         self.print(f"loading cached dataset found at {self.dataset_local_npz}")
         self.data, self.meta = self.load_npz()
 
-        if self.train_uptodate is not None:
-            self.print(f"train_uptodate={self.train_uptodate} provided. removing all observations before {self.train_uptodate}")
-            mask = self.data[:, :, 0].astype(np.datetime64) < np.array([self.train_uptodate], dtype=np.datetime64)
+        start, end = self.filter_date
+        if end is not None:
+            self.print(f"train_uptodate={end} provided. removing all observations before {end}")
+            mask = self.data[:, :, 0].astype(np.datetime64) < np.array([end], dtype=np.datetime64)
+            mask = np.repeat(mask[:,:,None],2,axis=2)
+            N, T, D = self.data.shape
+            self.data = self.data[mask].reshape(N,-1,D)
+        if start is not None:
+            self.print(f"train_uptodate={start} provided. removing all observations after {start}")
+            mask = self.data[:, :, 0].astype(np.datetime64) < np.array([start], dtype=np.datetime64)
             mask = np.repeat(mask[:,:,None],2,axis=2)
             N, T, D = self.data.shape
             self.data = self.data[mask].reshape(N,-1,D)
@@ -95,7 +104,7 @@ class ModisDataset(torch.utils.data.Dataset):
 
         #ndvi = self.data[:,:,1].astype(float)  * 1e-4
 
-        ndvi = interpolate_nans(data)
+        values = interpolate_nans(data)
 
         self.date = self.data[:, :, 0]
         if include_time:
@@ -107,9 +116,12 @@ class ModisDataset(torch.utils.data.Dataset):
             # sinusoidal encoding
             doy = np.sin(doy * 2 * np.pi)
 
-            self.data = np.dstack([ndvi, doy])
+            self.data = np.dstack([values, doy])
         else:
-            self.data = ndvi[:,:,None]
+            self.data = values[:,:,None]
+
+        if smooth is not None:
+            self.data = scipy.ndimage.filters.gaussian_filter1d(self.data, smooth, axis=1)
 
         self.x_data, self.y_data = transform_data(self.data, seq_len=self.seq_length)
 
@@ -350,7 +362,6 @@ class Sentinel5Dataset(torch.utils.data.Dataset):
         x = self.x_data[idx]
         y = self.y_data[idx]
         return x, y
-
 
 def transform_data(arr, seq_len):
     d = arr.shape[2]
