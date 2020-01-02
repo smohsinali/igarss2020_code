@@ -230,12 +230,14 @@ class Sentinel5Dataset(torch.utils.data.Dataset):
                  verbose=True,
                  split_ratio = [.6,.2,.2],
                  seq_length=100,
+                 include_time=False,
                  overwrite=False):
         super(Sentinel5Dataset).__init__()
 
         self.dataset_url = "https://syncandshare.lrz.de/dl/fiMBavGt2aPijY8pjiKESWFF/urbanareas_no2_all.csv"
         self.dataset_local_path = "/tmp/urbanareas_no2_all.csv"
         self.dataset_local_npz = "/tmp/urbanareas_no2_all.npz"
+        self.include_time = include_time
 
         assert sum(split_ratio) == 1
 
@@ -259,12 +261,12 @@ class Sentinel5Dataset(torch.utils.data.Dataset):
         self.print(f"loading cached dataset found at {self.dataset_local_npz}")
         self.data, self.meta, self.mean, self.std = self.load_npz()
 
-
         x_data = list()
         y_data = list()
         for _,row in self.meta.iterrows():
-            d = self.data[row["city"]][:, 1]
-            x, y = transform_data(d.astype(float)[:, None, None], seq_len=self.seq_length)
+
+            d, dates = self.get_data(row["city"])
+            x, y = transform_data(d, seq_len=self.seq_length)
             x_data.append(x)
             y_data.append(y)
 
@@ -273,6 +275,24 @@ class Sentinel5Dataset(torch.utils.data.Dataset):
 
         self.x_data = self.znormalize(self.x_data)
         self.y_data = self.znormalize(self.y_data)
+
+    def get_data(self, city):
+        d = self.data[city][:, 1]
+
+        if self.include_time:
+            dates = self.data[city][:, 0].astype(np.datetime64)
+            # year = dates.astype('datetime64[Y]').astype(int) + 1970
+            doy = dates - dates.astype('datetime64[Y]')
+            doy = doy.astype(float) / 365
+
+            # sinusoidal encoding
+            doy = np.sin(doy * 2 * np.pi)
+
+            d = np.dstack([d, doy]).astype(float).swapaxes(0,1)
+        else:
+            d = d.astype(float)[:, None, None]
+
+        return d, dates
 
     def znormalize(self,arr):
         arr = arr - torch.Tensor(self.mean)

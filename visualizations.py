@@ -12,14 +12,6 @@ tumgray = "#999999"
 tumlightgray = "#dad7cb"
 
 def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=50, ylim=None, device=torch.device('cpu'), store=None, meanstd=None):
-    def variance(y_hat, var_hat):
-        """eq 9 in Kendall & Gal"""
-        T = y_hat.shape[0]
-        sum_squares = (1 / T) * (y_hat ** 2).sum(0)
-        squared_sum = ((1 / T) * y_hat.sum(0)) ** 2
-        epi_var = sum_squares - squared_sum
-        ale_var = (1 / T) * (var_hat ** 2).sum(0)
-        return epi_var + ale_var, epi_var, ale_var
 
     future = x.shape[0] - N_seen_points
 
@@ -30,7 +22,6 @@ def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=5
     axs[1].set_title("aleatoric uncertainty")
     axs[2].set_title("combined uncertainty")
 
-
     x_ = torch.Tensor(x)[None, :].to(device)
     if x_.shape[2] == 2:
         doy_seen = x_[:, :N_seen_points, 1]
@@ -40,7 +31,7 @@ def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=5
         doy_future=None
     x_data = x_[:, :N_seen_points, 0].unsqueeze(2)
 
-    mean, epi_var, ale_var = model.predict(x_data, N_predictions, future, date=doy_seen, date_future=doy_future)
+    mean, epi_var, ale_var,y_hat = model.predict(x_data, N_predictions, future, date=doy_seen, date_future=doy_future, return_yhat=True)
     var = epi_var + ale_var
 
     mean = mean.cpu().squeeze()
@@ -56,6 +47,7 @@ def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=5
         dmean, dstd = meanstd
         x = (x * dstd) + dmean
         mean = (mean * dstd) + dmean
+        y_hat = (y_hat * dstd) + dmean
         ale_std = ale_std * dstd
         epi_std = epi_std * dstd
         data_std = data_std * dstd
@@ -96,5 +88,78 @@ def make_and_plot_predictions(model, x, date, N_seen_points=250, N_predictions=5
         df.iloc[N_seen_points:].to_csv(f"{store}_predicted.csv")
         df.to_csv(f"{store}.csv")
         print(f"saving to {store}")
+        
+        preds = pd.DataFrame(y_hat.squeeze().cpu().numpy(), index=[f"pred{run}" for run in range(N_predictions)]).T
+        preds["date"] = date
+        preds.to_csv(f"{store}_predictions.csv")
 
     return fig, axs
+
+def make_and_plot_combined_predictions(model, x, date, N_seen_points=250, N_predictions=50, ylim=None,
+                              device=torch.device('cpu'), store=None, meanstd=None, ax=None):
+    future = x.shape[0] - N_seen_points
+
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(14, 3))
+
+    x_ = torch.Tensor(x)[None, :].to(device)
+    if x_.shape[2] == 2:
+        doy_seen = x_[:, :N_seen_points, 1]
+        doy_future = x_[:, N_seen_points:, 1]
+    else:
+        doy_seen = None
+        doy_future = None
+    x_data = x_[:, :N_seen_points, 0].unsqueeze(2)
+
+    mean, epi_var, ale_var, y_hat = model.predict(x_data, N_predictions, future, date=doy_seen, date_future=doy_future,
+                                                  return_yhat=True)
+    var = epi_var + ale_var
+
+    mean = mean.cpu().squeeze()
+    var = var.cpu().squeeze()
+    epi_var = epi_var.cpu().squeeze()
+    ale_var = ale_var.cpu().squeeze()
+
+    epi_std = torch.sqrt(epi_var[1:])
+    ale_std = torch.sqrt(ale_var[1:])
+    data_std = epi_std + ale_std
+
+    if meanstd is not None:
+        dmean, dstd = meanstd
+        x = (x * dstd) + dmean
+        mean = (mean * dstd) + dmean
+        y_hat = (y_hat * dstd) + dmean
+        ale_std = ale_std * dstd
+        epi_std = epi_std * dstd
+        data_std = data_std * dstd
+
+    ax.fill_between(date[1:], mean[1:] + data_std, mean[1:] - data_std, alpha=.5,
+                        label=r"combined $\sigma$")
+
+    ax.plot(date[:N_seen_points], x[:N_seen_points, 0], c="#000000", alpha=1, label="seen input sequence")
+    ax.plot(date[N_seen_points:], x[N_seen_points:, 0], c="#000000", alpha=.1, label="unseen future")
+    ax.axvline(x=date[N_seen_points], ymin=0, ymax=1)
+    if ylim is not None:
+        ax.set_ylim(ylim)
+    ax.plot(date[1:], mean[1:], c=tumorange)
+
+    if store is not None:
+        import pandas as pd
+        df = pd.DataFrame([date, mean.numpy(), epi_std.numpy(), ale_std.numpy(), data_std.numpy(), x[:, 0]],
+                          index=["date", "mean", "epi_std", "ale_std", "std", "x"]).T
+        df["mean-epistd"] = df["mean"] - df["epi_std"]
+        df["mean+epistd"] = df["mean"] + df["epi_std"]
+        df["mean-alestd"] = df["mean"] - df["ale_std"]
+        df["mean+alestd"] = df["mean"] + df["ale_std"]
+        df["mean-std"] = df["mean"] - df["std"]
+        df["mean+std"] = df["mean"] + df["std"]
+        df.iloc[:N_seen_points].to_csv(f"{store}_seen.csv")
+        df.iloc[N_seen_points:].to_csv(f"{store}_predicted.csv")
+        df.to_csv(f"{store}.csv")
+        print(f"saving to {store}")
+
+        preds = pd.DataFrame(y_hat.squeeze().cpu().numpy(), index=[f"pred{run}" for run in range(N_predictions)]).T
+        preds["date"] = date
+        preds.to_csv(f"{store}_predictions.csv")
+
+    return ax

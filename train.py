@@ -2,7 +2,8 @@ from dataset import ModisDataset, Sentinel5Dataset
 import torch
 import numpy as np
 import torch.nn as nn
-from tqdm import tqdm
+#from tqdm import tqdm
+from tqdm.autonotebook import tqdm
 import os
 import matplotlib.pyplot as plt
 from model import Model, snapshot
@@ -17,9 +18,9 @@ def main():
 
     num_layers = 3
     hidden_size = 32
-    region = "germany"
+    region = "canada2"
     epochs = 100
-    include_time = False
+    include_time = True
     smooth = None
 
     model_dir="/data2/igarss2020/models/"
@@ -37,25 +38,26 @@ def main():
     model.train()
 
 
+    if False:
+        dataset = ModisDataset(region=region,
+                               fold="train",
+                               znormalize=True,
+                               augment=False,
+                               overwrite=False,
+                               include_time=include_time,
+                               filter_date=(None,None),
+                               smooth=smooth)
 
-    dataset = ModisDataset(region=region,
-                           fold="train",
-                           znormalize=True,
-                           augment=False,
-                           overwrite=False,
-                           include_time=include_time,
-                           filter_date=(None,None),
-                           smooth=smooth)
+        validdataset = ModisDataset(region=region,
+                                    fold="validate",
+                                    znormalize=True,
+                                    augment=False,
+                                    include_time=include_time,
+                                    smooth=smooth)
 
-    validdataset = ModisDataset(region=region,
-                                fold="validate",
-                                znormalize=True,
-                                augment=False,
-                                include_time=include_time,
-                                smooth=smooth)
-
-    #dataset = Sentinel5Dataset(fold="train", seq_length=300)
-    #validdataset = Sentinel5Dataset(fold="validate", seq_length=300)
+    else:
+        dataset = Sentinel5Dataset(fold="train", seq_length=300, include_time=include_time)
+        validdataset = Sentinel5Dataset(fold="validate", seq_length=300, include_time=include_time)
 
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=512,
@@ -192,18 +194,20 @@ def test_model(model, dataset, device):
         plt.show()
 
     elif isinstance(dataset,Sentinel5Dataset):
-        d = dataset.data["Napoli"]
-        x = d[:,1].astype(float)[:,None]
+        #d, date = dataset.data["Napoli"]
+        d, date = dataset.get_data("Napoli")
+        d = d.swapaxes(0,1)
+        #x = d[:,:,0]
+        #d[:, :, 0] = dataset.znormalize(d[:, :, 0])
+        #date = d[:, :, 0].astype(np.datetime64)
 
-        x = x - dataset.mean
-        x = x / dataset.std
-
-        date = d[:,0].astype(np.datetime64)
+        d[:,:,0] = d[:,:,0] - dataset.mean
+        d[:, :, 0] = d[:,:,0] / dataset.std
 
         N_seen_points = 300
         N_predictions = 20
 
-        make_and_plot_predictions(model, x, date, N_seen_points=N_seen_points, N_predictions=N_predictions,
+        make_and_plot_predictions(model, d[0], date, N_seen_points=N_seen_points, N_predictions=N_predictions,
                                   device=device)
         plt.show()
 

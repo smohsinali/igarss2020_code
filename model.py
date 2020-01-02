@@ -55,7 +55,7 @@ class Model(torch.nn.Module):
 
         return outputs, log_variances
 
-    def predict(self, input, n_predictions, future=0, date=None, date_future=None):
+    def predict(self, input, n_predictions, future=0, date=None, date_future=None, return_yhat=False):
         outputs = list()
         variances = list()
 
@@ -71,7 +71,10 @@ class Model(torch.nn.Module):
         epi_var, ale_var = variance(y_hat, var_hat)
         mean = y_hat.mean(0)
 
-        return mean, epi_var, ale_var
+        if return_yhat:
+            return mean, epi_var, ale_var, y_hat
+        else:
+            return mean, epi_var, ale_var
 
 
 
