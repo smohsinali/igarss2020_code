@@ -163,3 +163,42 @@ def make_and_plot_combined_predictions(model, x, date, N_seen_points=250, N_pred
         preds.to_csv(f"{store}_predictions.csv")
 
     return ax
+
+def predict_future(model, x, future, date, N_predictions=50, ax=None, device=torch.device('cpu'), meanstd=None):
+
+    if ax is None:
+        fig,ax = plt.subplots(figsize=(12,4))
+
+    x_ = torch.Tensor(x)[None, :].to(device)
+    x_data = x_[:, :, 0].unsqueeze(2)
+
+    dt = np.median(np.diff(date))
+    future_dates = date[-1] + np.arange(1,future+1)*dt
+    all_dates = np.hstack([date, future_dates])
+
+    mean, epi_var, ale_var,y_hat = model.predict(x_data, N_predictions, future, return_yhat=True)
+
+    var = epi_var + ale_var
+
+    mean = mean.cpu().squeeze()
+    var = var.cpu().squeeze()
+    epi_var = epi_var.cpu().squeeze()
+    ale_var = ale_var.cpu().squeeze()
+
+    epi_std = torch.sqrt(epi_var[1:])
+    ale_std = torch.sqrt(ale_var[1:])
+    data_std = epi_std + ale_std
+
+    if meanstd is not None:
+        dmean, dstd = meanstd
+        x = (x * dstd) + dmean
+        mean = (mean * dstd) + dmean
+        y_hat = (y_hat * dstd) + dmean
+        ale_std = ale_std * dstd
+        epi_std = epi_std * dstd
+        data_std = data_std * dstd
+
+    ax.plot(all_dates[1:],mean[1:].cpu().numpy())
+    ax.plot(date,x[:,0])
+    ax.axvline(x=date[-1])
+    ax.fill_between(all_dates[1:], mean[1:] + data_std, mean[1:] - data_std, alpha=.5)

@@ -46,7 +46,7 @@ class Model(torch.nn.Module):
         h_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
         c_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
 
-        outputs, log_variances = self.encode(input,h_t, c_t)
+        outputs, log_variances, (h_t, c_t) = self.encode(input, h_t, c_t)
 
         if future > 0:
             future_outputs, future_logvariances = self.decode(outputs[:,-1], h_t, c_t, future,y=y, date=date_future)
@@ -76,8 +76,6 @@ class Model(torch.nn.Module):
         else:
             return mean, epi_var, ale_var
 
-
-
     def encode(self,input, h_t, c_t):
 
         input = self.inlinear(input)
@@ -91,9 +89,9 @@ class Model(torch.nn.Module):
         outputs = output[:, :, 0, None]
         log_variances = output[:, :, -1, None]
 
-        return outputs, log_variances
+        return outputs, log_variances, (h_t, c_t)
 
-    def decode(self, future_input, h_t, c_t, future, y=None, date=None):
+    def decode(self, future_input, h_t, c_t, future, y=None, date=None, return_states=False):
         future_outputs = list()
         future_logvariances = list()
         for i in range(future):
@@ -122,7 +120,11 @@ class Model(torch.nn.Module):
 
         future_outputs = torch.stack(future_outputs, 1)
         future_logvariances = torch.stack(future_logvariances, 1)
-        return future_outputs, future_logvariances
+
+        if return_states:
+            return future_outputs, future_logvariances, (h_t, c_t)
+        else:
+            return future_outputs, future_logvariances
 
 def snapshot(model, optimizer, path):
     torch.save(
@@ -134,5 +136,6 @@ def snapshot(model, optimizer, path):
 def restore(path, model, optimizer=None):
     snapshot = torch.load(path)
     model.load_state_dict(snapshot["model"])
+    print(f"restoring model from {path}")
     if optimizer is not None:
         optimizer.load_state_dict(snapshot["optimizer"])

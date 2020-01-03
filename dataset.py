@@ -23,7 +23,8 @@ class ModisDataset(torch.utils.data.Dataset):
                  filter_date=(None,None),
                  znormalize=False,
                  augment=False,
-                 smooth=None):
+                 smooth=None,
+                 smooth_method="mean"):
         super(ModisDataset).__init__()
 
         if region == "africa":
@@ -121,7 +122,12 @@ class ModisDataset(torch.utils.data.Dataset):
             self.data = values[:,:,None]
 
         if smooth is not None:
-            self.data = scipy.ndimage.filters.gaussian_filter1d(self.data, smooth, axis=1)
+            if smooth_method == "mean":
+                self.data[:,:,0] = scipy.ndimage.filters.gaussian_filter1d(self.data[:,:,0], smooth, axis=1)
+            elif smooth_method == "median":
+                self.data[:,:,0] = scipy.ndimage.filters.median_filter(self.data[:,:,0], smooth)
+            else:
+                raise ValueError("smooth method either 'mean' or 'median'")
 
         self.x_data, self.y_data = transform_data(self.data, seq_len=self.seq_length)
 

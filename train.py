@@ -1,14 +1,13 @@
 from dataset import ModisDataset, Sentinel5Dataset
 import torch
 import numpy as np
-import torch.nn as nn
-#from tqdm import tqdm
 from tqdm.autonotebook import tqdm
 import os
 import matplotlib.pyplot as plt
 from model import Model, snapshot
 import ignite.metrics
 import pandas as pd
+from dataset import transform_data
 
 def main():
     if torch.cuda.is_available():
@@ -18,7 +17,7 @@ def main():
 
     num_layers = 3
     hidden_size = 32
-    region = "canada2"
+    region = "germany"
     epochs = 100
     include_time = True
     smooth = None
@@ -38,7 +37,7 @@ def main():
     model.train()
 
 
-    if False:
+    if True:
         dataset = ModisDataset(region=region,
                                fold="train",
                                znormalize=True,
@@ -239,6 +238,21 @@ def test_model(model, dataset, device):
     ax.legend()
     plt.show()
     """
+
+
+def fine_tune(x, model, criterion, optimizer, inner_steps=1, device=torch.device('cpu')):
+    model.lstm.flatten_parameters()
+
+    for i in range(inner_steps):
+        x_data, y_true = transform_data(x[:, None, :], seq_len=100)
+        x_data = x_data.to(device)
+        y_true = y_true.to(device)
+
+        y_pred, log_variances = model(x_data)
+        loss = criterion(y_pred, y_true, log_variances)
+        loss.backward()
+        optimizer.step()
+    return model
 
 if __name__ == '__main__':
     main()
