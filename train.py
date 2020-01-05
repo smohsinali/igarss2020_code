@@ -244,6 +244,7 @@ def fine_tune(x, model, criterion, optimizer, inner_steps=1, device=torch.device
     model.lstm.flatten_parameters()
 
     for i in range(inner_steps):
+        model.zero_grad()
         x_data, y_true = transform_data(x[:, None, :], seq_len=100)
         x_data = x_data.to(device)
         y_true = y_true.to(device)

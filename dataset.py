@@ -10,7 +10,7 @@ import geopandas as gpd
 import numpy as np
 import scipy.ndimage
 
-AUGMENTATION_OFFSET_MAGNITUDE = 1
+AUGMENTATION_OFFSET_MAGNITUDE = 2
 
 class ModisDataset(torch.utils.data.Dataset):
     def __init__(self, region="africa",
