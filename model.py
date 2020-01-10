@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import torch.nn as nn
+from attention import Attention
 
 def variance(y_hat, var_hat):
     """eq 9 in Kendall & Gal"""
@@ -12,16 +13,26 @@ def variance(y_hat, var_hat):
     return epi_var, ale_var
 
 class Model(torch.nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, dropout=0.5, device=torch.device("cpu"), num_layers=1):
+    def __init__(self, input_size, hidden_size, output_size, dropout=0.5, device=torch.device("cpu"), num_layers=1, use_attention=False):
         super(Model, self).__init__()
         self.device = device
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size
         self.num_layers = num_layers
-        self.inlinear = nn.Linear(self.input_size, self.hidden_size)
-        self.relu = nn.ReLU()
+        #self.inlinear = nn.Linear(self.input_size, self.hidden_size)
+        #self.relu = nn.ReLU()
+        self.use_attention = use_attention
         self.dropout = nn.Dropout(dropout)
+        self.inDense = torch.nn.Sequential(
+            nn.Linear(self.input_size, self.hidden_size),
+            nn.ReLU(),
+            self.dropout
+        )
+
+        if self.use_attention:
+            self.attention = Attention(self.hidden_size)
+
         self.lstm = torch.nn.LSTM(self.hidden_size,
                                   self.hidden_size,
                                   num_layers=num_layers,
@@ -46,10 +57,10 @@ class Model(torch.nn.Module):
         h_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
         c_t = torch.zeros(self.num_layers, input.size(0), self.hidden_size, dtype=torch.float32).to(self.device)
 
-        outputs, log_variances, (h_t, c_t) = self.encode(input, h_t, c_t)
+        outputs, log_variances, (h_t, c_t), context = self.encode(input, h_t, c_t)
 
         if future > 0:
-            future_outputs, future_logvariances = self.decode(outputs[:,-1], h_t, c_t, future,y=y, date=date_future)
+            future_outputs, future_logvariances = self.decode(outputs, h_t, c_t, future,y=y, date=date_future, context=context)
             outputs = torch.cat([outputs,future_outputs],1)
             log_variances = torch.cat([log_variances,future_logvariances],1)
 
@@ -76,22 +87,28 @@ class Model(torch.nn.Module):
         else:
             return mean, epi_var, ale_var
 
-    def encode(self,input, h_t, c_t):
+    def encode(self, input, h_t, c_t):
 
-        input = self.inlinear(input)
-        input = self.relu(input)
-        input = self.dropout(input)
+        input = self.inDense(input)
 
         output, (h_t, c_t) = self.lstm(input, (h_t, c_t))
-        output = self.dropout(output)
-        output = self.outlinear(output)
+        lstm_outputs = self.dropout(output)
+
+        if self.use_attention:
+            query = lstm_outputs
+            context = lstm_outputs
+            values = lstm_outputs
+            lstm_outputs, weights = self.attention(query, context, values)
+
+        output = self.outlinear(lstm_outputs)
 
         outputs = output[:, :, 0, None]
         log_variances = output[:, :, -1, None]
 
-        return outputs, log_variances, (h_t, c_t)
+        return outputs, log_variances, (h_t, c_t), lstm_outputs
 
-    def decode(self, future_input, h_t, c_t, future, y=None, date=None, return_states=False):
+    def decode(self, outputs, h_t, c_t, future, y=None, date=None, return_states=False, context=None):
+        future_input = outputs[:, -1]
         future_outputs = list()
         future_logvariances = list()
         for i in range(future):
@@ -104,12 +121,18 @@ class Model(torch.nn.Module):
                 # concatenate with future input and ensure [N, D] dimensions
                 future_input = torch.stack([future_input, next_date],2).squeeze(1)
 
-            future_input = self.inlinear(future_input)
-            future_input = self.relu(future_input)
-            future_input = self.dropout(future_input)
+            future_input = self.inDense(future_input)
 
             future_input, (h_t, c_t) = self.lstm(future_input[:, None, :], (h_t, c_t))
             future_input = self.dropout(future_input)
+
+            if self.use_attention:
+                #forecasted_outputs = torch.stack(future_outputs, 1)
+                #all_outputs = torch.cat([outputs, forecasted_outputs], 1)
+                context = torch.cat([context,future_input],1)
+                query = future_input
+                future_input, weights = self.attention(query, context, context)
+
             future_input_logvariance = self.outlinear(future_input)
 
             future_input = future_input_logvariance[:, :, 0]

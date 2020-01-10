@@ -21,6 +21,7 @@ def main():
     epochs = 100
     include_time = True
     smooth = None
+    use_attention = True
 
     model_dir="/data2/igarss2020/models/"
     log_dir = "/data2/igarss2020/models/"
@@ -31,7 +32,8 @@ def main():
                   hidden_size=hidden_size,
                   num_layers=num_layers,
                   output_size=1,
-                  device=device)
+                  device=device,
+                  use_attention=use_attention)
 
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
@@ -41,7 +43,7 @@ def main():
         dataset = ModisDataset(region=region,
                                fold="train",
                                znormalize=True,
-                               augment=False,
+                               augment=True,
                                overwrite=False,
                                include_time=include_time,
                                filter_date=(None,None),
