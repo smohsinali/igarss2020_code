@@ -97,40 +97,41 @@ def train(hidden_size,num_layers,lr, weight_decay):
         print(f"{log_path} exists. skipping...")
         return
     
-    model, dataset, validdataset, dataloader, validdataloader, optimizer = setup(hidden_size,num_layers,lr, weight_decay)
-    stats=list()
-    for epoch in range(epochs):
-        trainloss = train_epoch(model,dataloader,optimizer, criterion, device)
-        testmetrics, testloss = test_epoch(model,validdataloader,device, criterion, n_predictions=1)
-        metric_msg = ", ".join([f"{name}={metric.compute():.2f}" for name, metric in testmetrics.items()])
-        msg = f"epoch {epoch}: train loss {trainloss:.2f}, test loss {testloss:.2f}, {metric_msg}"
-        print(msg)
+    try:
+        model, dataset, validdataset, dataloader, validdataloader, optimizer = setup(hidden_size,num_layers,lr, weight_decay)
+        stats=list()
+        for epoch in range(epochs):
+            trainloss = train_epoch(model,dataloader,optimizer, criterion, device)
+            testmetrics, testloss = test_epoch(model,validdataloader,device, criterion, n_predictions=1)
+            metric_msg = ", ".join([f"{name}={metric.compute():.2f}" for name, metric in testmetrics.items()])
+            msg = f"epoch {epoch}: train loss {trainloss:.2f}, test loss {testloss:.2f}, {metric_msg}"
+            print(msg)
 
-        #test_model(model, validdataset, device)
+            #test_model(model, validdataset, device)
 
-        model_name = name_pattern.format(region=region, num_layers=num_layers, hidden_size=hidden_size, lr=lr, weight_decay=weight_decay, epoch=epoch)
-        pth = os.path.join(model_dir, model_name+".pth")
-        print(f"saving model snapshot to {pth}")
-        snapshot(model, optimizer, pth)
-        stat = dict()
-        stat["epoch"] = epoch
-        for name, metric in testmetrics.items():
-            stat[name]=metric.compute()
+            model_name = name_pattern.format(region=region, num_layers=num_layers, hidden_size=hidden_size, lr=lr, weight_decay=weight_decay, epoch=epoch)
+            pth = os.path.join(model_dir, model_name+".pth")
+            print(f"saving model snapshot to {pth}")
+            snapshot(model, optimizer, pth)
+            stat = dict()
+            stat["epoch"] = epoch
+            for name, metric in testmetrics.items():
+                stat[name]=metric.compute()
 
-        stat["trainloss"] = trainloss.cpu().detach().numpy()
-        stat["testloss"] = testloss.cpu().detach().numpy()
-        stats.append(stat)
-        
-    df = pd.DataFrame(stats)
-    
-    df.to_csv(log_path)
-    print(f"saving log to {log_path}")
+            stat["trainloss"] = trainloss.cpu().detach().numpy()
+            stat["testloss"] = testloss.cpu().detach().numpy()
+            stats.append(stat)
+            
+    finally:
+        df = pd.DataFrame(stats)
+        df.to_csv(log_path)
+        print(f"saving log to {log_path}")
 
 def sample_hparams():
     hidden_size = np.random.choice([16,32,64,128,256,512])
     num_layers = np.random.choice([1,2,3,4,5,6])
     lr=np.random.choice([1e-2,1e-3])#np.power(10,np.random.uniform(low=-4, high=-1, size=1))
-    weight_decay=np.random.choice([1e-4,1e-5,1e-6])
+    weight_decay=np.random.choice([1e-2,1e-3,1e-4,1e-5,1e-6])
     return int(hidden_size), int(num_layers), float(lr), float(weight_decay)
 
 while True:
