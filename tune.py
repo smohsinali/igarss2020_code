@@ -27,6 +27,7 @@ log_dir = "/data2/igarss2020/tune/"
 name_pattern = "LSTM_{region}_l={num_layers}_h={hidden_size}_lr={lr}_weightdecay={weight_decay}_e={epoch}"
 log_pattern = "LSTM_{region}_l={num_layers}_h={hidden_size}_lr={lr}_weightdecay={weight_decay}_log.csv"
 epochs = 10
+use_attention = True
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -48,6 +49,7 @@ def setup(hidden_size,num_layers,lr, weight_decay):
                   hidden_size=hidden_size,
                   num_layers=num_layers,
                   output_size=1,
+                  use_attention=use_attention,
                   device=device)
 
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
