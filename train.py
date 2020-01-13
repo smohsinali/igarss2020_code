@@ -15,11 +15,11 @@ def main():
     else:
         device = torch.device("cpu")
 
-    num_layers = 3
-    hidden_size = 32
+    num_layers = 1
+    hidden_size = 256
     region = "germany"
     epochs = 100
-    include_time = True
+    include_time = False
     smooth = None
     use_attention = True
 
@@ -80,7 +80,7 @@ def main():
         regularization = log_variances.mean()
         return 0.5 * (loss + regularization)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-6)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-4)
 
     stats=list()
     for epoch in range(epochs):

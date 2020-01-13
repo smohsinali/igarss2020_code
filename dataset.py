@@ -125,7 +125,7 @@ class ModisDataset(torch.utils.data.Dataset):
             if smooth_method == "mean":
                 self.data[:,:,0] = scipy.ndimage.filters.gaussian_filter1d(self.data[:,:,0], smooth, axis=1)
             elif smooth_method == "median":
-                self.data[:,:,0] = scipy.ndimage.filters.median_filter(self.data[:,:,0], smooth)
+                self.data[:,:,0] = scipy.ndimage.filters.median_filter(self.data[:,:,0], smooth, origin=smooth//2)
             else:
                 raise ValueError("smooth method either 'mean' or 'median'")
 
