@@ -24,7 +24,8 @@ class ModisDataset(torch.utils.data.Dataset):
                  znormalize=False,
                  augment=False,
                  smooth=None,
-                 smooth_method="mean"):
+                 smooth_method="mean",
+                 dataset_normalizing_factor=1):
         super(ModisDataset).__init__()
 
         if region == "africa":
@@ -99,9 +100,11 @@ class ModisDataset(torch.utils.data.Dataset):
             self.mean = np.nanmean(data)
             self.std = np.nanstd(data)
             data -= self.mean
-            data /= self.std
+            data /= self.std * dataset_normalizing_factor
         else:
-            data *= 1e-4
+            data /= 1e+4 * dataset_normalizing_factor
+            self.mean=0
+            self.std=1
 
         #ndvi = self.data[:,:,1].astype(float)  * 1e-4
 
