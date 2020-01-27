@@ -300,6 +300,7 @@ class Sentinel5Dataset(torch.utils.data.Dataset):
             d = np.dstack([d, doy]).astype(float).swapaxes(0,1)
         else:
             d = d.astype(float)[:, None, None]
+            dates = None
 
         return d, dates
 
