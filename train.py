@@ -38,7 +38,6 @@ def main():
     #model.load_state_dict(torch.load("/tmp/model_epoch_0.pth")["model"])
     model.train()
 
-
     if True:
         dataset = ModisDataset(region=region,
                                fold="train",

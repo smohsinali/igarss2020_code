@@ -3,6 +3,8 @@ import numpy as np
 import torch.nn as nn
 from attention import Attention
 
+from collections import OrderedDict
+
 def variance(y_hat, var_hat):
     """eq 9 in Kendall & Gal"""
     T = y_hat.shape[0]
@@ -156,9 +158,18 @@ def snapshot(model, optimizer, path):
             optimizer=optimizer.state_dict()),
         path)
 
+def rename(odict, oldkey, newkey):
+    return OrderedDict((newkey if k == oldkey else k, v) for k, v in odict.items())
+
 def restore(path, model, optimizer=None):
     snapshot = torch.load(path)
-    model.load_state_dict(snapshot["model"])
+    state_dict = snapshot["model"]
+
+    state_dict = rename(state_dict, oldkey="inlinear.weight", newkey="inDense.0.weight")
+    state_dict = rename(state_dict, oldkey="inlinear.bias", newkey="inDense.0.bias")
+
+
+    model.load_state_dict(state_dict)
     print(f"restoring model from {path}")
     if optimizer is not None:
         optimizer.load_state_dict(snapshot["optimizer"])
